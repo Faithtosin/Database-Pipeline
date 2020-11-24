@@ -9,7 +9,7 @@ phases:
     commands:
       - apt update
       - apt install -y postgresql postgresql-contrib
-      - sexport PGPASSWORD=qwerty123456
+      - export PGPASSWORD=qwerty123456
       - psql --host=$DBEndPoint --dbname=$DBname --port=$Port --username=$DBUser  < "moxa-devices.sql"
       - echo Deploy started on `date`
       - echo Deploying to $ENV_NAME environment...
