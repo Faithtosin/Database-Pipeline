@@ -9,7 +9,8 @@ phases:
     commands:
       - apt update
       - apt install -y postgresql postgresql-contrib
-      - psql --host=$DBEndPoint --dbname=$DBname --port=$Port --username=$DBUser --password=$Password < "moxa-devices.sql"
+      - set PGPASSWORD=$Password
+      - psql --host=$DBEndPoint --dbname=$DBname --port=$Port --username=$DBUser  < "moxa-devices.sql"
       - echo Deploy started on `date`
       - echo Deploying to $ENV_NAME environment...
 artifacts:
