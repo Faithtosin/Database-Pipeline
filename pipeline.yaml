@@ -125,25 +125,16 @@ Resources:
         EnvironmentVariables:
           - Name: ENV_NAME
             Value: dev
-  
-  DBCodeBuilProjectDeployQa:  
-    Type: 'AWS::CodeBuild::Project'
-    Properties:
-      Name: !Sub '${AWS::StackName}-deploy-qa'
-      ServiceRole: !GetAtt DBCodeBuildServiceRole.Arn
-      Source:
-        Type: CODEPIPELINE
-        BuildSpec: deployspec.yaml
-      Artifacts:
-        Type: CODEPIPELINE
-      Environment:
-        Type: LINUX_CONTAINER
-        PrivilegedMode: true
-        ComputeType: BUILD_GENERAL1_SMALL
-        Image: !Ref CodeBuildEnvironmentImage
-        EnvironmentVariables:
-          - Name: ENV_NAME
-            Value: qa  
+          - Name: DBEndPoint
+            Value: moxadb.ci4w4i2sveag.us-west-2.rds.amazonaws.com
+          - Name: DBname
+            Value: moxadb
+          - Name: Port
+            Value: 5432
+          - Name: DBUser
+            Value: MoxaUser
+          - Name: Password
+            Value: qwerty123456
   DBCodePipelineServiceRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -271,17 +262,6 @@ Resources:
                 - Name: BuildOutput
         - Name: Qa   
           Actions:
-            - Name: Deploy
-              RunOrder: 1
-              ActionTypeId:
-                Category: Build
-                Owner: AWS
-                Provider: CodeBuild
-                Version: '1'
-              Configuration:
-                ProjectName: !Ref DBCodeBuilProjectDeployQa
-              InputArtifacts:
-                - Name: BuildOutput
             - Name: Approval
               RunOrder: 2
               ActionTypeId:
