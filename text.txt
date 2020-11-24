@@ -1,0 +1,1 @@
+it works like a normal terminal

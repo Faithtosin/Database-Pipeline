@@ -7,7 +7,7 @@ env:
 phases:
   build:
     commands:
-      - echo Entered the deploy phase...
+      - cat text.txt
       - echo Deploy started on `date`
       - echo Deploying to $ENV_NAME environment...
 artifacts:
