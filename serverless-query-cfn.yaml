@@ -1,0 +1,374 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Create Lambda function to query a database and the API Gateway REST API to
+  invoke the function
+Parameters:
+  PPort:
+    Description: 'Lambda Environment Variable: PORT'
+    Default: 5432
+    Type: String
+  PS3Bucket:
+    Description: Lambda S3Bucket Value
+    Default: api-lambda-postgres
+    Type: String
+  PSubnetIds:
+    Description: Lambda SubnetIds Value
+    Default: subnet-eae036b7
+    Type: String
+  PSecurityGroupIds:
+    Description: Lambda SecurityGroupIds Value
+    Default: sg-3b17706b
+    Type: String
+  DBInstanceID:
+    Default: moxadb
+    Description: database instance identifier
+    Type: String
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: >-
+      Must begin with a letter and must not end with a hyphen or contain two
+      consecutive hyphens.
+  DBName:
+    Default: moxadb
+    Description: database name
+    Type: String
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters.
+  DBInstanceClass:
+    Default: db.t2.micro
+    Description: DB instance class
+    Type: String
+    ConstraintDescription: Must select a valid DB instance type.
+  DBAllocatedStorage:
+    Default: '20'
+    Description: The size of the database (GiB)
+    Type: Number
+    ConstraintDescription: must be between 20 and 65536 GiB
+  DBUsername:
+    NoEcho: 'true'
+    Description: Username for database access
+    Type: String
+    Default: MoxaUser
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBPassword:
+    NoEcho: 'true'
+    Description: Password database access
+    Type: String
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: must contain only alphanumeric characters.
+Resources:
+  #RDS postgres creation
+  rdsDBInstance:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      AllocatedStorage: !Ref DBAllocatedStorage
+      AllowMajorVersionUpgrade: false
+      AutoMinorVersionUpgrade: true
+      BackupRetentionPeriod: 0
+      DBInstanceIdentifier: !Ref DBInstanceID
+      DBInstanceClass: !Ref DBInstanceClass
+      DBName: !Ref DBName
+      Engine: postgres
+      EngineVersion: 12.4
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      MultiAZ: false
+      Port: 5432
+      PubliclyAccessible: true
+      StorageType: gp2
+      Tags:
+        - Key: keyname
+          Value: value
+  #S3 bucket to contain lambda function python package
+  #Lambda-ApiGateway creation
+  LambdaVPCExecutionRole:
+    Description: Assumable role allows Lambda to create ENIs and access VPC
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+      RoleName: lambda-vpc-execution-role
+  ServerlessQuery3LambdaFunction:
+    Description: Create Lambda function using serverless-query3.py
+    DependsOn: 
+      - rdsDBInstance
+      - S3Bucket
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: ServerlessQuery3
+      Handler: serverless-query3.handler
+      Role: !GetAtt LambdaVPCExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref PS3Bucket
+        S3Key: serverless-query.zip
+      Runtime: python3.7
+      VpcConfig:
+        SubnetIds:
+          - !Ref PSubnetIds
+        SecurityGroupIds:
+          - !Ref PSecurityGroupIds
+      Environment:
+        Variables:
+          ENDPOINT: !GetAtt [rdsDBInstance, Endpoint.Address]
+          PORT: !Ref PPort
+          DATABASE: !Ref DBName
+          DBUSER: !Ref DBUsername
+          DBPASSWORD: !Ref DBPassword
+  ServerlessQuery2LambdaFunction:
+    Description: Create Lambda function using serverless-query2.py
+    DependsOn: 
+      - rdsDBInstance
+      - S3Bucket
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: ServerlessQuery2
+      Handler: serverless-query2.handler
+      Role: !GetAtt LambdaVPCExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref PS3Bucket
+        S3Key: serverless-query.zip
+      Runtime: python3.7
+      VpcConfig:
+        SubnetIds:
+          - !Ref PSubnetIds
+        SecurityGroupIds:
+          - !Ref PSecurityGroupIds
+      Environment:
+        Variables:
+          ENDPOINT: !GetAtt [rdsDBInstance, Endpoint.Address]
+          PORT: !Ref PPort
+          DATABASE: !Ref DBName
+          DBUSER: !Ref DBUsername
+          DBPASSWORD: !Ref DBPassword
+  ServerlessQueryLambdaFunction:
+    Description: Create Lambda function using code from S3 bucket
+    DependsOn: 
+      - rdsDBInstance
+      - S3Bucket
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: ServerlessQuery
+      Handler: serverless-query.handler
+      Role: !GetAtt LambdaVPCExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref PS3Bucket
+        S3Key: serverless-query.zip
+      Runtime: python3.7
+      VpcConfig:
+        SubnetIds:
+          - !Ref PSubnetIds
+        SecurityGroupIds:
+          - !Ref PSecurityGroupIds
+      Environment:
+        Variables:
+          ENDPOINT: !GetAtt [rdsDBInstance, Endpoint.Address]
+          PORT: !Ref PPort
+          DATABASE: !Ref DBName
+          DBUSER: !Ref DBUsername
+          DBPASSWORD: !Ref DBPassword
+  ApiGatewayCloudwatchRole:
+    Description: Allow API Gateway to publish to CloudWatch logs
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - >-
+          arn:aws:iam::aws:policy/service-role/AmazonApiGatewayPushToCloudWatchLogs
+      RoleName: apigateway-cloudwatch-role
+  ApiGatewayAccount:
+    Description: Pass CloudWatch role to API Gateway Account
+    Type: 'AWS::ApiGateway::Account'
+    Properties:
+      CloudWatchRoleArn: !GetAtt ApiGatewayCloudwatchRole.Arn
+  ServerlessQueryApi:
+    Description: Create API Gateway REST API
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: ServerlessQueryApi
+  ServerlessQueryApiResource:
+    Description: Create ServerlessQueryApi Resource
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref ServerlessQueryApi
+      ParentId: !GetAtt ServerlessQueryApi.RootResourceId
+      PathPart: query1
+  ServerlessQuery2ApiResource:
+    Description: Create ServerlessQuery2Api Resource
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref ServerlessQueryApi
+      ParentId: !GetAtt ServerlessQueryApi.RootResourceId
+      PathPart: query2
+  LambdaInvoke2Permission:
+    Description: Grant ServerlessQueryApi Permission to Invoke ServerlessQuery Lambda function
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !GetAtt 
+        - ServerlessQuery2LambdaFunction
+        - Arn
+      Action: 'lambda:invokeFunction'
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Join 
+        - ''
+        - - 'arn:aws:execute-api:'
+          - !Ref 'AWS::Region'
+          - ':'
+          - !Ref 'AWS::AccountId'
+          - ':'
+          - !Ref ServerlessQueryApi
+          - /*
+  ServerlessQuery2ApiMethod:
+    Description: Create ServerlessQuery2ApiResource Method
+    DependsOn: LambdaInvoke2Permission
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Join 
+          - ''
+          - - 'arn:aws:apigateway:'
+            - !Ref 'AWS::Region'
+            - ':lambda:path/2015-03-31/functions/'
+            - !GetAtt 
+              - ServerlessQuery2LambdaFunction
+              - Arn
+            - /invocations
+        IntegrationResponses:
+          - StatusCode: 200
+      ResourceId: !Ref ServerlessQuery2ApiResource
+      RestApiId: !Ref ServerlessQueryApi
+      MethodResponses:
+        - StatusCode: 200
+  ServerlessQuery3ApiResource:
+    Description: Create ServerlessQuery3Api Resource
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref ServerlessQueryApi
+      ParentId: !GetAtt 
+        - ServerlessQueryApi
+        - RootResourceId
+      PathPart: query3
+  LambdaInvoke3Permission:
+    Description: >-
+      Grant ServerlessQueryApi Permission to Invoke ServerlessQuery Lambda
+      function
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !GetAtt 
+        - ServerlessQuery3LambdaFunction
+        - Arn
+      Action: 'lambda:invokeFunction'
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Join 
+        - ''
+        - - 'arn:aws:execute-api:'
+          - !Ref 'AWS::Region'
+          - ':'
+          - !Ref 'AWS::AccountId'
+          - ':'
+          - !Ref ServerlessQueryApi
+          - /*
+  ServerlessQuery3ApiMethod:
+    Description: Create ServerlessQuery3ApiResource Method
+    DependsOn: LambdaInvoke3Permission
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Join 
+          - ''
+          - - 'arn:aws:apigateway:'
+            - !Ref 'AWS::Region'
+            - ':lambda:path/2015-03-31/functions/'
+            - !GetAtt 
+              - ServerlessQuery3LambdaFunction
+              - Arn
+            - /invocations
+        IntegrationResponses:
+          - StatusCode: 200
+      ResourceId: !Ref ServerlessQuery3ApiResource
+      RestApiId: !Ref ServerlessQueryApi
+      MethodResponses:
+        - StatusCode: 200
+  LambdaInvokePermission:
+    Description: >-
+      Grant ServerlessQueryApi Permission to Invoke ServerlessQuery Lambda
+      function
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !GetAtt 
+        - ServerlessQueryLambdaFunction
+        - Arn
+      Action: 'lambda:invokeFunction'
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Join 
+        - ''
+        - - 'arn:aws:execute-api:'
+          - !Ref 'AWS::Region'
+          - ':'
+          - !Ref 'AWS::AccountId'
+          - ':'
+          - !Ref ServerlessQueryApi
+          - /*
+  ServerlessQueryApiMethod:
+    Description: Create ServerlessQueryApiResource Method
+    DependsOn: LambdaInvokePermission
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Join 
+          - ''
+          - - 'arn:aws:apigateway:'
+            - !Ref 'AWS::Region'
+            - ':lambda:path/2015-03-31/functions/'
+            - !GetAtt 
+              - ServerlessQueryLambdaFunction
+              - Arn
+            - /invocations
+        IntegrationResponses:
+          - StatusCode: 200
+      ResourceId: !Ref ServerlessQueryApiResource
+      RestApiId: !Ref ServerlessQueryApi
+      MethodResponses:
+        - StatusCode: 200
+  ServerlessQueryApiDeploy:
+    Description: Deploy ServerlessQueryApi
+    Type: 'AWS::ApiGateway::Deployment'
+    DependsOn: 
+      - ServerlessQueryApiMethod
+      - ServerlessQuery2ApiMethod
+      - ServerlessQuery3ApiMethod
+    Properties:
+      RestApiId: !Ref ServerlessQueryApi
+      StageName: beta
+Outputs:
+  DBHostName:
+    Description: database hostname
+    Value: !GetAtt [rdsDBInstance, Endpoint.Address]
