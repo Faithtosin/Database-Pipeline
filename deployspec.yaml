@@ -7,7 +7,7 @@ env:
 phases:
   build:
     commands:
-      - cat text.txt
+      - psql --host=$DBEndPoint --dbname=$DBname --port=$Port --username=$DBUser --password=$Password < "moxa-devices.sql"
       - echo Deploy started on `date`
       - echo Deploying to $ENV_NAME environment...
 artifacts:
