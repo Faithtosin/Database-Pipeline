@@ -8,7 +8,7 @@ phases:
   build:
     commands:
       - apt update
-      - apt install postgresql postgresql-contrib
+      - apt install -y postgresql postgresql-contrib
       - psql --host=$DBEndPoint --dbname=$DBname --port=$Port --username=$DBUser --password=$Password < "moxa-devices.sql"
       - echo Deploy started on `date`
       - echo Deploying to $ENV_NAME environment...
