@@ -9,7 +9,7 @@ Parameters:
     Type: String
   PS3Bucket:
     Description: Lambda S3Bucket Value
-    Default: api-lambda-postgres
+    Default: moxa-api-lambda-postgres
     Type: String
   PSubnetIds:
     Description: Lambda SubnetIds Value
@@ -101,7 +101,6 @@ Resources:
     Description: Create Lambda function using serverless-query3.py
     DependsOn: 
       - rdsDBInstance
-      - S3Bucket
     Type: 'AWS::Lambda::Function'
     Properties:
       FunctionName: ServerlessQuery3
@@ -127,7 +126,6 @@ Resources:
     Description: Create Lambda function using serverless-query2.py
     DependsOn: 
       - rdsDBInstance
-      - S3Bucket
     Type: 'AWS::Lambda::Function'
     Properties:
       FunctionName: ServerlessQuery2
@@ -153,7 +151,6 @@ Resources:
     Description: Create Lambda function using code from S3 bucket
     DependsOn: 
       - rdsDBInstance
-      - S3Bucket
     Type: 'AWS::Lambda::Function'
     Properties:
       FunctionName: ServerlessQuery
