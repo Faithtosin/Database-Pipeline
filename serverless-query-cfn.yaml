@@ -56,8 +56,22 @@ Parameters:
     Type: String
     AllowedPattern: '[a-zA-Z0-9]*'
     ConstraintDescription: must contain only alphanumeric characters.
+  GitHubOwner:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9-]+'
+    Default: Faithtosin
+  GitHubRepository:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9-]+'
+    Default: db-pipeline
+  GitHubBranch:
+    Type: String
+    AllowedPattern: '[A-Za-z0-9-]+'
+    Default: main
+  CodeBuildEnvironmentImage:
+    Type: String
+    Default: 'aws/codebuild/standard:4.0'
 Resources:
-  #RDS postgres creation
   rdsDBInstance:
     Type: 'AWS::RDS::DBInstance'
     Properties:
@@ -71,7 +85,8 @@ Resources:
       Engine: postgres
       EngineVersion: 12.4
       MasterUsername: !Ref DBUsername
-      MasterUserPassword: !Ref DBPassword
+      MasterUserPassword: >-
+        {{resolve:secretsmanager:moxa/dev/db/password:SecretString:DB_ACCESS_PASSWORD}}
       MultiAZ: false
       Port: 5432
       PubliclyAccessible: true
@@ -79,8 +94,6 @@ Resources:
       Tags:
         - Key: keyname
           Value: value
-  #S3 bucket to contain lambda function python package
-  #Lambda-ApiGateway creation
   LambdaVPCExecutionRole:
     Description: Assumable role allows Lambda to create ENIs and access VPC
     Type: 'AWS::IAM::Role'
@@ -99,7 +112,7 @@ Resources:
       RoleName: lambda-vpc-execution-role
   ServerlessQuery3LambdaFunction:
     Description: Create Lambda function using serverless-query3.py
-    DependsOn: 
+    DependsOn:
       - rdsDBInstance
     Type: 'AWS::Lambda::Function'
     Properties:
@@ -117,14 +130,15 @@ Resources:
           - !Ref PSecurityGroupIds
       Environment:
         Variables:
-          ENDPOINT: !GetAtt [rdsDBInstance, Endpoint.Address]
+          ENDPOINT: !GetAtt rdsDBInstance.Endpoint.Address
           PORT: !Ref PPort
           DATABASE: !Ref DBName
           DBUSER: !Ref DBUsername
-          DBPASSWORD: !Ref DBPassword
+          DBPASSWORD: >-
+            {{resolve:secretsmanager:moxa/dev/db/password:SecretString:DB_ACCESS_PASSWORD}}
   ServerlessQuery2LambdaFunction:
     Description: Create Lambda function using serverless-query2.py
-    DependsOn: 
+    DependsOn:
       - rdsDBInstance
     Type: 'AWS::Lambda::Function'
     Properties:
@@ -142,14 +156,15 @@ Resources:
           - !Ref PSecurityGroupIds
       Environment:
         Variables:
-          ENDPOINT: !GetAtt [rdsDBInstance, Endpoint.Address]
+          ENDPOINT: !GetAtt rdsDBInstance.Endpoint.Address
           PORT: !Ref PPort
           DATABASE: !Ref DBName
           DBUSER: !Ref DBUsername
-          DBPASSWORD: !Ref DBPassword
+          DBPASSWORD: >-
+            {{resolve:secretsmanager:moxa/dev/db/password:SecretString:DB_ACCESS_PASSWORD}}
   ServerlessQueryLambdaFunction:
     Description: Create Lambda function using code from S3 bucket
-    DependsOn: 
+    DependsOn:
       - rdsDBInstance
     Type: 'AWS::Lambda::Function'
     Properties:
@@ -167,11 +182,12 @@ Resources:
           - !Ref PSecurityGroupIds
       Environment:
         Variables:
-          ENDPOINT: !GetAtt [rdsDBInstance, Endpoint.Address]
+          ENDPOINT: !GetAtt rdsDBInstance.Endpoint.Address
           PORT: !Ref PPort
           DATABASE: !Ref DBName
           DBUSER: !Ref DBUsername
-          DBPASSWORD: !Ref DBPassword
+          DBPASSWORD: >-
+            {{resolve:secretsmanager:moxa/dev/db/password:SecretString:DB_ACCESS_PASSWORD}}
   ApiGatewayCloudwatchRole:
     Description: Allow API Gateway to publish to CloudWatch logs
     Type: 'AWS::IAM::Role'
@@ -217,9 +233,7 @@ Resources:
     Description: Grant ServerlessQueryApi Permission to Invoke ServerlessQuery Lambda function
     Type: 'AWS::Lambda::Permission'
     Properties:
-      FunctionName: !GetAtt 
-        - ServerlessQuery2LambdaFunction
-        - Arn
+      FunctionName: !GetAtt ServerlessQuery2LambdaFunction.Arn
       Action: 'lambda:invokeFunction'
       Principal: apigateway.amazonaws.com
       SourceArn: !Join 
@@ -358,14 +372,273 @@ Resources:
   ServerlessQueryApiDeploy:
     Description: Deploy ServerlessQueryApi
     Type: 'AWS::ApiGateway::Deployment'
-    DependsOn: 
+    DependsOn:
       - ServerlessQueryApiMethod
       - ServerlessQuery2ApiMethod
       - ServerlessQuery3ApiMethod
     Properties:
       RestApiId: !Ref ServerlessQueryApi
       StageName: beta
+  DBCodeBuildServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: 1
+                Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                  - 'logs:FilterLogEvents'
+                  - 'logs:GetLogEvents'
+                Resource:
+                  - '*'
+              - Sid: 2
+                Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:GetObjectVersion'
+                  - 's3:PutObject'
+                  - 's3:GetBucketAcl'
+                  - 's3:GetBucketLocation'
+                  - 's3:CreateBucket'
+                  - 's3:List*'
+                  - 's3:PutObject'
+                Resource:
+                  - '*'
+              - Sid: 3
+                Effect: Allow
+                Action:
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:BatchGetImage'
+                  - 'ecr:BatchCheckLayerAvailability'
+                  - 'ecr:PutImage'
+                  - 'ecr:InitiateLayerUpload'
+                  - 'ecr:UploadLayerPart'
+                  - 'ecr:CompleteLayerUpload'
+                  - 'ecr:GetAuthorizationToken'
+                  - 'ecr:InitiateLayerUpload'
+                  - 'ec2:DescribeNetworkInterfaces'
+                  - 'ec2:CreateNetworkInterface'
+                  - 'ec2:DescribeDhcpOptions'
+                  - 'ec2:DescribeNetworkInterfaces'
+                  - 'ec2:DeleteNetworkInterface'
+                  - 'ec2:DescribeSubnets'
+                  - 'ec2:DescribeSecurityGroups'
+                  - 'ec2:DescribeSecurityGroupReferences'
+                  - 'ec2:DescribeStaleSecurityGroups'
+                  - 'ec2:DescribeVpcs'
+                  - 'ec2:CreateNetworkInterfacePermission'
+                Resource:
+                  - '*'
+              - Sid: 4
+                Effect: Allow
+                Action:
+                  - 'iam:AddRoleToInstanceProfile'
+                  - 'iam:AttachRolePolicy'
+                  - 'iam:CreateInstanceProfile'
+                  - 'iam:CreatePolicy'
+                  - 'iam:CreateRole'
+                  - 'iam:GetRole'
+                  - 'iam:ListAttachedRolePolicies'
+                  - 'iam:ListPolicies'
+                  - 'iam:ListRoles'
+                  - 'iam:PassRole'
+                  - 'iam:PutRolePolicy'
+                  - 'iam:UpdateAssumeRolePolicy'
+                Resource:
+                  - '*'
+              - Sid: 5
+                Effect: Allow
+                Action:
+                  - 'kms:Encrypt'
+                  - 'kms:Decrypt'
+                  - 'kms:ReEncrypt*'
+                  - 'kms:GenerateDataKey*'
+                  - 'kms:DescribeKey'
+                Resource:
+                  - '*'
+  DBCodeBuilProjectDeployDev:
+    Type: 'AWS::CodeBuild::Project'
+    DependsOn:
+      - rdsDBInstance
+    Properties:
+      Name: !Sub '${AWS::StackName}-deploy-dev'
+      ServiceRole: !GetAtt DBCodeBuildServiceRole.Arn
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: deployspec.yaml
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        PrivilegedMode: true
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: !Ref CodeBuildEnvironmentImage
+        EnvironmentVariables:
+          - Name: ENV_NAME
+            Value: dev
+          - Name: DBEndPoint
+            Value: !GetAtt rdsDBInstance.Endpoint.Address
+          - Name: DBname
+            Value: !Ref DBName
+          - Name: Port
+            Value: !Ref PPort
+          - Name: DBUser
+            Value: !Ref DBUsername
+          - Name: Password
+            Value: >-
+              {{resolve:secretsmanager:moxa/dev/db/password:SecretString:DB_ACCESS_PASSWORD}}
+  DBCodePipelineServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: 6
+                Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource:
+                  - '*'
+              - Sid: 7
+                Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:GetObjectVersion'
+                  - 's3:PutObject'
+                  - 's3:GetBucketAcl'
+                  - 's3:GetBucketLocation'
+                  - 's3:CreateBucket'
+                  - 's3:List*'
+                Resource:
+                  - '*'
+              - Sid: 8
+                Action:
+                  - 'codebuild:BatchGetBuilds'
+                  - 'codebuild:StartBuild'
+                  - 'codebuild:BatchGetBuildBatches'
+                  - 'codebuild:StartBuildBatch'
+                Resource: '*'
+                Effect: Allow
+              - Sid: 9
+                Effect: Allow
+                Action:
+                  - 'codedeploy:CreateDeployment'
+                  - 'codedeploy:GetApplicationRevision'
+                  - 'codedeploy:GetDeployment'
+                  - 'codedeploy:GetDeploymentConfig'
+                  - 'codedeploy:RegisterApplicationRevision'
+                Resource:
+                  - '*'
+              - Sid: 10
+                Effect: Allow
+                Action:
+                  - 'ecs:DescribeServices'
+                  - 'ecs:DescribeTaskDefinition'
+                  - 'ecs:DescribeTasks'
+                  - 'ecs:ListTasks'
+                  - 'ecs:RegisterTaskDefinition'
+                  - 'ecs:UpdateService'
+                Resource:
+                  - '*'
+  DBCodePipelineArtifactStore:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+  DBCodePipelineWebhook:
+    Type: 'AWS::CodePipeline::Webhook'
+    Properties:
+      Authentication: GITHUB_HMAC
+      AuthenticationConfiguration:
+        SecretToken: >-
+          {{resolve:secretsmanager:GITHUB_ACCESS:SecretString:GITHUB_ACCESS_TOKEN}}
+      RegisterWithThirdParty: 'true'
+      Filters:
+        - JsonPath: $.ref
+          MatchEquals: 'refs/heads/{Branch}'
+        - JsonPath: $.repository.name
+          MatchEquals: '{Repo}'
+      TargetPipeline: !Ref DBCodePipeline
+      TargetAction: Source
+      TargetPipelineVersion: !GetAtt DBCodePipeline.Version
+  DBCodePipeline:
+    Type: 'AWS::CodePipeline::Pipeline'
+    Properties:
+      Name: !Ref 'AWS::StackName'
+      RoleArn: !GetAtt DBCodePipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref DBCodePipelineArtifactStore
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Version: 1
+                Provider: GitHub
+              Configuration:
+                Owner: !Ref GitHubOwner
+                Repo: !Ref GitHubRepository
+                Branch: !Ref GitHubBranch
+                PollForSourceChanges: false
+                OAuthToken: >-
+                  {{resolve:secretsmanager:GITHUB_ACCESS:SecretString:GITHUB_ACCESS_TOKEN}}
+              OutputArtifacts:
+                - Name: SourceCode
+        - Name: Dev
+          Actions:
+            - Name: Deploy
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref DBCodeBuilProjectDeployDev
+              InputArtifacts:
+                - Name: SourceCode
+              OutputArtifacts:
+                - Name: BuildOutput
+        - Name: Qa
+          Actions:
+            - Name: Approval
+              RunOrder: 2
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              Configuration:
+                CustomData: Approve or Reject this change after running tests
 Outputs:
   DBHostName:
     Description: database hostname
-    Value: !GetAtt [rdsDBInstance, Endpoint.Address]
+    Value: !GetAtt 
+      - rdsDBInstance
+      - Endpoint.Address
