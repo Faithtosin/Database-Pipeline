@@ -122,7 +122,33 @@ Resources:
       Code:
         S3Bucket: !Ref PS3Bucket
         S3Key: serverless-query.zip
-      Runtime: python3.7
+      Runtime: python3.6
+      VpcConfig:
+        SubnetIds:
+          - !Ref PSubnetIds
+        SecurityGroupIds:
+          - !Ref PSecurityGroupIds
+      Environment:
+        Variables:
+          ENDPOINT: !GetAtt rdsDBInstance.Endpoint.Address
+          PORT: !Ref PPort
+          DATABASE: !Ref DBName
+          DBUSER: !Ref DBUsername
+          DBPASSWORD: >-
+            {{resolve:secretsmanager:moxa/dev/db/password:SecretString:DB_ACCESS_PASSWORD}}
+  ServerlessQuery4LambdaFunction:
+    Description: Create Lambda function using serverless-query.py
+    DependsOn:
+      - rdsDBInstance
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: ServerlessQuery4
+      Handler: serverless-query.handler
+      Role: !GetAtt LambdaVPCExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref PS3Bucket
+        S3Key: serverless-query.zip
+      Runtime: python3.6
       VpcConfig:
         SubnetIds:
           - !Ref PSubnetIds
@@ -148,33 +174,7 @@ Resources:
       Code:
         S3Bucket: !Ref PS3Bucket
         S3Key: serverless-query.zip
-      Runtime: python3.7
-      VpcConfig:
-        SubnetIds:
-          - !Ref PSubnetIds
-        SecurityGroupIds:
-          - !Ref PSecurityGroupIds
-      Environment:
-        Variables:
-          ENDPOINT: !GetAtt rdsDBInstance.Endpoint.Address
-          PORT: !Ref PPort
-          DATABASE: !Ref DBName
-          DBUSER: !Ref DBUsername
-          DBPASSWORD: >-
-            {{resolve:secretsmanager:moxa/dev/db/password:SecretString:DB_ACCESS_PASSWORD}}
-  ServerlessQueryLambdaFunction:
-    Description: Create Lambda function using code from S3 bucket
-    DependsOn:
-      - rdsDBInstance
-    Type: 'AWS::Lambda::Function'
-    Properties:
-      FunctionName: ServerlessQuery
-      Handler: serverless-query.handler
-      Role: !GetAtt LambdaVPCExecutionRole.Arn
-      Code:
-        S3Bucket: !Ref PS3Bucket
-        S3Key: serverless-query.zip
-      Runtime: python3.7
+      Runtime: python3.6
       VpcConfig:
         SubnetIds:
           - !Ref PSubnetIds
@@ -215,13 +215,29 @@ Resources:
     Type: 'AWS::ApiGateway::RestApi'
     Properties:
       Name: ServerlessQueryApi
-  ServerlessQueryApiResource:
-    Description: Create ServerlessQueryApi Resource
+  ServerlessQuery4ApiResource:
+    Description: Create ServerlessQuery4Api Resource
     Type: 'AWS::ApiGateway::Resource'
     Properties:
       RestApiId: !Ref ServerlessQueryApi
       ParentId: !GetAtt ServerlessQueryApi.RootResourceId
-      PathPart: query1
+      PathPart: query4
+  LambdaInvoke4Permission:
+    Description: Grant ServerlessQueryApi Permission to Invoke ServerlessQuery Lambda function
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !GetAtt ServerlessQuery4LambdaFunction.Arn
+      Action: 'lambda:invokeFunction'
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Join 
+        - ''
+        - - 'arn:aws:execute-api:'
+          - !Ref 'AWS::Region'
+          - ':'
+          - !Ref 'AWS::AccountId'
+          - ':'
+          - !Ref ServerlessQueryApi
+          - /*
   ServerlessQuery2ApiResource:
     Description: Create ServerlessQuery2Api Resource
     Type: 'AWS::ApiGateway::Resource'
@@ -267,6 +283,31 @@ Resources:
         IntegrationResponses:
           - StatusCode: 200
       ResourceId: !Ref ServerlessQuery2ApiResource
+      RestApiId: !Ref ServerlessQueryApi
+      MethodResponses:
+        - StatusCode: 200
+  ServerlessQuery4ApiMethod:
+    Description: Create ServerlessQuery4ApiResource Method
+    DependsOn: LambdaInvoke4Permission
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Join 
+          - ''
+          - - 'arn:aws:apigateway:'
+            - !Ref 'AWS::Region'
+            - ':lambda:path/2015-03-31/functions/'
+            - !GetAtt 
+              - ServerlessQuery4LambdaFunction
+              - Arn
+            - /invocations
+        IntegrationResponses:
+          - StatusCode: 200
+      ResourceId: !Ref ServerlessQuery4ApiResource
       RestApiId: !Ref ServerlessQueryApi
       MethodResponses:
         - StatusCode: 200
@@ -324,56 +365,11 @@ Resources:
       RestApiId: !Ref ServerlessQueryApi
       MethodResponses:
         - StatusCode: 200
-  LambdaInvokePermission:
-    Description: >-
-      Grant ServerlessQueryApi Permission to Invoke ServerlessQuery Lambda
-      function
-    Type: 'AWS::Lambda::Permission'
-    Properties:
-      FunctionName: !GetAtt 
-        - ServerlessQueryLambdaFunction
-        - Arn
-      Action: 'lambda:invokeFunction'
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Join 
-        - ''
-        - - 'arn:aws:execute-api:'
-          - !Ref 'AWS::Region'
-          - ':'
-          - !Ref 'AWS::AccountId'
-          - ':'
-          - !Ref ServerlessQueryApi
-          - /*
-  ServerlessQueryApiMethod:
-    Description: Create ServerlessQueryApiResource Method
-    DependsOn: LambdaInvokePermission
-    Type: 'AWS::ApiGateway::Method'
-    Properties:
-      AuthorizationType: NONE
-      HttpMethod: GET
-      Integration:
-        Type: AWS_PROXY
-        IntegrationHttpMethod: POST
-        Uri: !Join 
-          - ''
-          - - 'arn:aws:apigateway:'
-            - !Ref 'AWS::Region'
-            - ':lambda:path/2015-03-31/functions/'
-            - !GetAtt 
-              - ServerlessQueryLambdaFunction
-              - Arn
-            - /invocations
-        IntegrationResponses:
-          - StatusCode: 200
-      ResourceId: !Ref ServerlessQueryApiResource
-      RestApiId: !Ref ServerlessQueryApi
-      MethodResponses:
-        - StatusCode: 200
   ServerlessQueryApiDeploy:
     Description: Deploy ServerlessQueryApi
     Type: 'AWS::ApiGateway::Deployment'
     DependsOn:
-      - ServerlessQueryApiMethod
+      - ServerlessQuery4ApiMethod
       - ServerlessQuery2ApiMethod
       - ServerlessQuery3ApiMethod
     Properties:
