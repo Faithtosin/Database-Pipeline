@@ -3,6 +3,12 @@ Description: >-
   Create Lambda function to query a database and the API Gateway REST API to
   invoke the function
 Parameters:
+  ENV:
+    Type: String
+    Default: development
+    AllowedValues:
+      - development
+      - production
   PPort:
     Description: 'Lambda Environment Variable: PORT'
     Default: 5432
@@ -71,6 +77,15 @@ Parameters:
   CodeBuildEnvironmentImage:
     Type: String
     Default: 'aws/codebuild/standard:4.0'
+Mappings:
+  LambdaVPCExecutionRole:
+    name:
+      development: MA-lamda-exrole-dev
+      production: MA-lamda-exrole-prod
+  ApiGatewayCloudwatchRole:
+    name:
+      development: ApigatewayCloudwatchRole-dev
+      production: ApigatewayCloudwatchRole-prod
 Resources:
   rdsDBInstance:
     Type: 'AWS::RDS::DBInstance'
@@ -109,14 +124,14 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
-      RoleName: lambda-vpc-execution-role
+      RoleName: !FindInMap [LambdaVPCExecutionRole, name, !Ref ENV]
   ServerlessQuery3LambdaFunction:
     Description: Create Lambda function using serverless-query3.py
     DependsOn:
       - rdsDBInstance
     Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName: ServerlessQuery3
+      FunctionName: RDS-Serverless-Query3-dev
       Handler: serverless-query3.handler
       Role: !GetAtt LambdaVPCExecutionRole.Arn
       Code:
@@ -142,7 +157,7 @@ Resources:
       - rdsDBInstance
     Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName: ServerlessQuery4
+      FunctionName: RDS-Serverless-Query4-dev
       Handler: serverless-query.handler
       Role: !GetAtt LambdaVPCExecutionRole.Arn
       Code:
@@ -168,7 +183,7 @@ Resources:
       - rdsDBInstance
     Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName: ServerlessQuery2
+      FunctionName: RDS-Serverless-Query2-dev
       Handler: serverless-query2.handler
       Role: !GetAtt LambdaVPCExecutionRole.Arn
       Code:
