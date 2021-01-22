@@ -1,5 +1,5 @@
-CREATE SCHEMA test ;
-CREATE TABLE test.Customers 
+CREATE SCHEMA IF NOT EXISTS test ;
+CREATE TABLE IF NOT EXISTS test.Customers 
 (CustomerID SERIAL, CustomerName VARCHAR(50), ContactName VARCHAR(50), Address VARCHAR(50), City VARCHAR(20), PostalCode VARCHAR(20), Country VARCHAR(20), PRIMARY KEY (CustomerID));
 
 
@@ -9,8 +9,7 @@ INSERT INTO test.Customers (CustomerID, CustomerName, ContactName, Address, City
 (2, 'Ana Trujillo Emparedados', 'Ana Trujillo', 'Avda. de la Constitución 2222', 'México D.F.', '05021', 'Mexico'),
 (3, 'Antonio Moreno Taquería', 'Antonio Moreno', 'Mataderos 2312', 'México D.F.', '05023', 'Mexico'),
 (4, 'Around the Horn', 'Thomas Hardy', '120 Hanover Sq.', 'London', 'WA1 1DP', 'UK'),
-(5, 'Berglunds snabbköp', 'Christina Berglund', 'Berguvsvägen 8', 'Luleå', 'S-958 22', 'Sweden'),
-
+(5, 'Berglunds snabbköp', 'Christina Berglund', 'Berguvsvägen 8', 'Luleå', 'S-958 22', 'Sweden')
 COMMIT;
 
 --verify
