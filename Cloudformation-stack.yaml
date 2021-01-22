@@ -19,11 +19,11 @@ Parameters:
     Type: String
   PSubnetIds:
     Description: Lambda SubnetIds Value
-    Default: subnet-d356eedd
+    Default: subnet-eae036b7
     Type: String
   PSecurityGroupIds:
     Description: Lambda SecurityGroupIds Value
-    Default: sg-e1a6fac2
+    Default: sg-3b17706b
     Type: String
   DBInstanceID:
     Default: moxadb
